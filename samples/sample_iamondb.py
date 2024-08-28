@@ -26,6 +26,7 @@ from inkml.parser import InkMLParser
 if __name__ == '__main__':
     parser: InkMLParser = InkMLParser()
     parser.set_typedef_pred(IS)
+    parser.content_view = 'hwr'
     parser.register_type('type', 'Document', SegmentationSchema.ROOT)
     parser.register_type('type', 'Formula', SegmentationSchema.MATH_BLOCK)
     parser.register_type('type', 'Arrow', SegmentationSchema.CONNECTOR)
@@ -61,7 +62,7 @@ if __name__ == '__main__':
     parser.cropping_offset = 10
     ink_model: InkModel = parser.parse(Path(__file__).parent / '..' / 'ink' / 'inkml' / 'iamondb.inkml')
 
-    structures: List[Dict[str, Any]] = uim_schema_semantics_from(ink_model, "custom")
+    structures: List[Dict[str, Any]] = uim_schema_semantics_from(ink_model, "hwr")
     build_tree(structures)
     with Path("iamondb.uim").open("wb") as file:
         file.write(UIMEncoder310().encode(ink_model))
