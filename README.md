@@ -172,9 +172,13 @@ This sample implementation provides a way to convert the IOT Paper Format to UIM
 
 ```python
 from pathlib import Path
+from typing import List
+
 from PIL import Image
 from uim.codec.writer.encoder.encoder_3_1_0 import UIMEncoder310
 from uim.model.ink import InkModel
+from uim.model.inkdata.strokes import InkStrokeAttributeType
+from uim.model.helpers.serialize import serialize_sensor_data_csv, json_encode
 
 from inkml.iot.parser import IOTPaperParser
 
@@ -189,6 +193,17 @@ if __name__ == '__main__':
     with Path("iot.uim").open("wb") as file:
         file.write(UIMEncoder310().encode(ink_model))
     img.save('template.png')
+    layout: List[InkStrokeAttributeType] = [
+        InkStrokeAttributeType.SPLINE_X, InkStrokeAttributeType.SPLINE_Y, InkStrokeAttributeType.SENSOR_TIMESTAMP,
+        InkStrokeAttributeType.SENSOR_PRESSURE, InkStrokeAttributeType.SENSOR_ALTITUDE,
+        InkStrokeAttributeType.SENSOR_AZIMUTH
+    ]
+    # Serialize the model to CSV
+    serialize_sensor_data_csv(ink_model, Path('sensor_data.csv'), layout=layout)
+    # Convert the model to JSON
+    with open('ink.json', 'w') as f:
+        # json_encode is a helper function to convert the model to JSON
+        f.write(json_encode(ink_model))
 ```
 
 ## NOTICE
