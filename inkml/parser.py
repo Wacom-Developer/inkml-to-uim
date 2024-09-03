@@ -1184,7 +1184,8 @@ class InkMLParser(Parser):
         """
         # Defining parser context
         context: DecoderContext = DecoderContext(version=SupportedFormats.INKML_VERSION.value,
-                                                 ink_model=uim.InkModel())
+                                                 ink_model=uim.InkModel(
+                                                     version=SupportedFormats.UIM_VERSION_3_1_0.value))
         context.ink_model.ink_tree = uim.InkTree()
         context.decoder_map[InkMLParser.CONTEXT_TAG] = {}
         # Set boundary
