@@ -1,4 +1,4 @@
-universal-ink-library>=2.0.1
+universal-ink-library>=2.0.4
 python-dateutil>=2.9.0
 lxml==5.2.2
-pillow
+pillow==10.4.0
