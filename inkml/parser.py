@@ -63,6 +63,7 @@ INPUT_CONTEXT_ID: str = 'input-context-id'
 CHANNEL: str = 'channel'
 CHANNELS: str = 'channels'
 PEN_DOWN: str = 'penDown'
+PEN_UP: str = 'penUp'
 # ---------------------------------- InkML tags ------------------------------------------------------------------------
 DEPTH: str = 'depth'
 METRIC: str = 'metric'
@@ -231,6 +232,7 @@ class InkMLParser(Parser):
     MAP_CHANNEL_TYPE: Dict[str, device.InkSensorType] = {
         'x': device.InkSensorType.X,
         'y': device.InkSensorType.Y,
+        'z': device.InkSensorType.Z,
         't': device.InkSensorType.TIMESTAMP,
         'f': device.InkSensorType.PRESSURE,
         'oa': device.InkSensorType.AZIMUTH,
@@ -623,7 +625,7 @@ class InkMLParser(Parser):
 
     @classmethod
     def __parse_samples__(cls, context: DecoderContext, tr_id: str, tr_ctx_id: str, trace_data: str,
-                          time_offset: int = 0, default_value_resolution: float = 1.):
+                          time_offset: int = 0, default_value_resolution: float = 1., hover: bool = False):
         """Parse samples (traces) from InkML file.
 
         Parameters
@@ -640,6 +642,8 @@ class InkMLParser(Parser):
             Time offset
         default_value_resolution: float (optional) [default: 1.]
             Default value resolution
+        hover: bool
+            The trace is hover data
         """
         # Channel indices for x, y coordinate
         # Default: Assumption channel order: x,y,t
@@ -647,6 +651,7 @@ class InkMLParser(Parser):
         y_index: int = 1
         t_index: int = 2
         f_index: int = 0
+        z_index: int = 0
         azimuth_index: int = 0
         altitude_index: int = 0
         xs: List[float] = []
@@ -655,6 +660,7 @@ class InkMLParser(Parser):
         spline_y: List[float] = []
         fs: List[float] = []
         ts: List[float] = []
+        zs: List[float] = []
         azimuth: List[float] = []
         altitude: List[float] = []
 
@@ -693,14 +699,19 @@ class InkMLParser(Parser):
         if channel_force:
             f_index = channel_force[INDEX]
             num_channels += 1
-
+        # Handle z, if available
+        channel_z: dict = InkMLParser.__context_get__(ctx[CHANNELS], device.InkSensorType.Z)
+        if channel_z:
+            z_index = channel_z[INDEX]
+            num_channels += 1
+        # Handle azimuth, if available
         if channel_azimuth:
             azimuth_index = channel_azimuth[INDEX]
             num_channels += 1
+        # Handle altitude, if available
         if channel_altitude:
             altitude_index = channel_altitude[INDEX]
             num_channels += 1
-
         # Strip data
         points_data: List[str] = InkMLParser.__clean__(trace_data).split(InkMLParser.SEPARATION_CHAR)
         modifier: str = InkMLParser.EMPTY_MODIFIER
@@ -785,6 +796,8 @@ class InkMLParser(Parser):
             # Concatenate x and y values
             xs.append(values[x_index])
             ys.append(values[y_index])
+            if channel_z:
+                zs.append(values[z_index])
             # Based on the specification of UIM the values are in SI unit in memory and are serialized original unit
             # The splines coordinates are in DIP unit
             spline_x.append(device.unit2unit(device.Unit.M, device.Unit.DIP, values[x_index]))
@@ -825,8 +838,13 @@ class InkMLParser(Parser):
         spline_x.append(spline_x[-1])
         spline_y.append(spline_y[-1])
         # Adding sensor data
-        sensor_data: sensor.SensorData = sensor.SensorData(input_context_id=ctx[INPUT_CONTEXT_ID],
-                                                           state=sensor.InkState.PLANE)
+        if hover:
+            sensor_data: sensor.SensorData = sensor.SensorData(input_context_id=ctx[INPUT_CONTEXT_ID],
+                                                               state=sensor.InkState.HOVERING)
+        else:
+            sensor_data: sensor.SensorData = sensor.SensorData(input_context_id=ctx[INPUT_CONTEXT_ID],
+                                                               state=sensor.InkState.PLANE)
+
         stroke_data: Stroke = Stroke(sensor_data_id=sensor_data.id, style=InkMLParser.style())
         # Spline data
         stroke_data.splines_x = spline_x
@@ -840,6 +858,8 @@ class InkMLParser(Parser):
         sensor_data.add_data(channel_y[CHANNEL_REF], ys)
         if channel_timestamp:
             sensor_data.add_timestamp_data(channel_timestamp[CHANNEL_REF], ts)
+        if channel_z:
+            sensor_data.add_data(channel_z[CHANNEL_REF], zs)
         if channel_force:
             sensor_data.add_data(channel_force[CHANNEL_REF], fs)
         if channel_azimuth:
@@ -848,7 +868,8 @@ class InkMLParser(Parser):
             sensor_data.add_data(channel_altitude[CHANNEL_REF], altitude)
         # Adding sensor data
         context.ink_model.sensor_data.add(sensor_data)
-        context.register_stroke(stroke_data, tr_id)
+        if not hover:
+            context.register_stroke(stroke_data, tr_id)
 
     @classmethod
     def __trace_view__(cls, context: DecoderContext, trace_view: Element, namespace: str):
@@ -1085,7 +1106,6 @@ class InkMLParser(Parser):
         """
         start: float = time.time()
         traces: int = 0
-
         # --------------------------------------------------------------------------------------------------------------
         for tr in inkml_obj.findall(f'./{namespace}trace'):
             tr_id: str = xml_id(tr)
@@ -1111,6 +1131,16 @@ class InkMLParser(Parser):
                     InkMLParser.__parse_samples__(context, tr_id, context_id, text, time_offset,
                                                   default_value_resolution)
                     traces += 1
+                elif event_type == PEN_UP:
+                    # There might be annotation within the trace, then tr.text is missing content
+                    text: str = tr.text
+                    for t in tr:
+                        text += t.tail
+                    text = text.strip()
+                    InkMLParser.__parse_samples__(context, tr_id, context_id, text, time_offset,
+                                                  default_value_resolution, hover=True)
+                    traces += 1
+
             except InkMLParserException as e:
                 logger.warning(e)
         # Collect hierarchical tree for trace groups
